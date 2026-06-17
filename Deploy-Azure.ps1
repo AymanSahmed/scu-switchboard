@@ -62,9 +62,11 @@ Write-Ok $InfraResourceGroup
 # ── 2 · Webhook secret ─────────────────────────────────────────────────────────
 Write-Step 'Resolving webhook secret'
 
-$kvName   = "$Prefix-kv"
-$kvExists = az keyvault show --name $kvName --resource-group $InfraResourceGroup --query name -o tsv 2>$null
-if ($kvExists) {
+# Find any existing Key Vault in this RG whose name starts with the prefix
+$secret = $null
+$kvName = az keyvault list --resource-group $InfraResourceGroup `
+    --query "[?starts_with(name, '$Prefix-kv')].name | [0]" -o tsv 2>$null
+if ($kvName) {
     $kvId = az keyvault show --name $kvName --resource-group $InfraResourceGroup --query id -o tsv 2>$null
     $kvRoleExists = az role assignment list --assignee $ownerId --role 'Key Vault Secrets Officer' `
         --scope $kvId --query '[0].name' -o tsv 2>$null

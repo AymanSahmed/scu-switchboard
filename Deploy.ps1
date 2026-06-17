@@ -84,9 +84,12 @@ if (-not $rgExists) {
 # ── 3 · Generate or retrieve webhook secret ────────────────────────────────────
 Write-Step "Resolving webhook secret"
 
-$kvName  = 'scu-sw-kv'
-$kvExists = az keyvault show --name $kvName --resource-group $InfraResourceGroup --query name -o tsv 2>$null
-if ($kvExists) {
+# Find any existing Key Vault in this RG whose name starts with the prefix
+# (name includes a unique suffix, so we discover it rather than hardcode it)
+$secret = $null
+$kvName = az keyvault list --resource-group $InfraResourceGroup `
+    --query "[?starts_with(name, 'scu-sw-kv')].name | [0]" -o tsv 2>$null
+if ($kvName) {
     # Ensure the admin has Key Vault Secrets Officer so they can read the secret
     $kvId = az keyvault show --name $kvName --resource-group $InfraResourceGroup --query id -o tsv 2>$null
     $kvRoleExists = az role assignment list --assignee $ownerId --role "Key Vault Secrets Officer" --scope $kvId --query "[0].name" -o tsv 2>$null

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.43.8.12551",
-      "templateHash": "1247534858448067971"
+      "templateHash": "14875312955504229476"
     }
   },
   "parameters": {
@@ -38,6 +38,9 @@
         "description": "AAD object ID of the admin/operator principal; receives App Configuration Data Owner so they can run Add-UserEnvironment.ps1."
       }
     }
+  },
+  "variables": {
+    "uniqueSuffix": "[take(uniqueString(resourceGroup().id), 6)]"
   },
   "resources": [
     {
@@ -175,7 +178,7 @@
             "value": "[parameters('location')]"
           },
           "configStoreName": {
-            "value": "[format('{0}-appconfig', parameters('prefix'))]"
+            "value": "[format('{0}-ac-{1}', parameters('prefix'), variables('uniqueSuffix'))]"
           },
           "adminPrincipalId": {
             "value": "[parameters('adminPrincipalId')]"
@@ -272,7 +275,7 @@
             "value": "[parameters('location')]"
           },
           "keyVaultName": {
-            "value": "[format('{0}-kv', parameters('prefix'))]"
+            "value": "[format('{0}-kv-{1}', parameters('prefix'), variables('uniqueSuffix'))]"
           },
           "webhookSecret": {
             "value": "[parameters('webhookSecret')]"
@@ -386,7 +389,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "2710700847586081912"
+              "templateHash": "1658117805429166478"
             }
           },
           "parameters": {
@@ -526,7 +529,7 @@
                                   "type": "Http",
                                   "inputs": {
                                     "method": "PUT",
-                                    "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-03-01-preview')}",
+                                    "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-11-01-preview')}",
                                     "body": {
                                       "location": "@outputs('Parse_User_Config')['region']",
                                       "properties": {
@@ -550,7 +553,7 @@
                                   "type": "Http",
                                   "inputs": {
                                     "method": "PUT",
-                                    "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-03-01-preview')}",
+                                    "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-11-01-preview')}",
                                     "body": {
                                       "location": "@outputs('Parse_User_Config')['region']",
                                       "properties": {
@@ -574,7 +577,7 @@
                                   "type": "Http",
                                   "inputs": {
                                     "method": "DELETE",
-                                    "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-03-01-preview')}",
+                                    "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-11-01-preview')}",
                                     "authentication": {
                                       "type": "ManagedServiceIdentity",
                                       "audience": "https://management.azure.com/"
@@ -590,7 +593,7 @@
                                   "type": "Http",
                                   "inputs": {
                                     "method": "GET",
-                                    "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-03-01-preview')}",
+                                    "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-11-01-preview')}",
                                     "authentication": {
                                       "type": "ManagedServiceIdentity",
                                       "audience": "https://management.azure.com/"
@@ -659,15 +662,11 @@
                             ]
                           },
                           "inputs": {
-                            "statusCode": 502,
+                            "statusCode": "@if(and(equals(triggerBody()?['action'], 'status'), contains(coalesce(body('Get_Capacity_Status')?['error']?['code'], ''), 'NotFound')), 200, 502)",
                             "headers": {
                               "Content-Type": "application/json"
                             },
-                            "body": {
-                              "error": "arm_error",
-                              "message": "ARM operation failed. Check Logic App run history for details.",
-                              "correlationId": "@workflow()['run']['name']"
-                            }
+                            "body": "@if(and(equals(triggerBody()?['action'], 'status'), contains(coalesce(body('Get_Capacity_Status')?['error']?['code'], ''), 'NotFound')), createObject('status', 'success', 'action', 'status', 'provisioningState', 'Stopped', 'capacityName', outputs('Parse_User_Config')['capacityName'], 'correlationId', workflow()['run']['name']), createObject('error', 'arm_error', 'armErrorCode', coalesce(body('Start_Capacity')?['error']?['code'], body('Stop_Capacity')?['error']?['code'], body('Scale_Capacity')?['error']?['code'], body('Get_Capacity_Status')?['error']?['code'], 'Unknown'), 'message', coalesce(body('Start_Capacity')?['error']?['message'], body('Stop_Capacity')?['error']?['message'], body('Scale_Capacity')?['error']?['message'], body('Get_Capacity_Status')?['error']?['message'], 'ARM operation failed.'), 'correlationId', workflow()['run']['name']))"
                           }
                         }
                       },

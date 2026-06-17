@@ -20,6 +20,14 @@ param webhookSecret string
 param adminPrincipalId string = ''
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Variables
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 6-char hash unique per resource group — prevents global name conflicts when
+// the same prefix is deployed into multiple resource groups / environments.
+var uniqueSuffix = take(uniqueString(resourceGroup().id), 6)
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Modules
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -36,7 +44,7 @@ module appconfig 'modules/appconfig.bicep' = {
   name: 'appconfig'
   params: {
     location: location
-    configStoreName: '${prefix}-appconfig'
+    configStoreName: '${prefix}-ac-${uniqueSuffix}'
     adminPrincipalId: adminPrincipalId
   }
 }
@@ -45,7 +53,7 @@ module keyvault 'modules/keyvault.bicep' = {
   name: 'keyvault'
   params: {
     location: location
-    keyVaultName: '${prefix}-kv'
+    keyVaultName: '${prefix}-kv-${uniqueSuffix}'
     webhookSecret: webhookSecret
   }
 }
