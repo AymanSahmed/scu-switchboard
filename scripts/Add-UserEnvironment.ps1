@@ -97,36 +97,38 @@ $envValue = [ordered]@{
     registeredAt    = (Get-Date -Format 'o')
 } | ConvertTo-Json -Compress -Depth 3
 
-# ── Get an access token for App Configuration data plane ─────────────────────
-
-Write-Verbose "Acquiring access token for $ConfigEndpoint …"
-$tokenJson = az account get-access-token --resource 'https://azconfig.io' --output json
-if ($LASTEXITCODE -ne 0) {
-    throw "Failed to acquire access token.  Are you logged in?  Run: az login"
-}
-$token = ($tokenJson | ConvertFrom-Json).accessToken
-
-# ── PUT key-value via App Configuration REST API ─────────────────────────────
-
-$uri     = "$ConfigEndpoint/kv/$([Uri]::EscapeDataString($key))?api-version=2023-11-01"
-$headers = @{
-    Authorization  = "Bearer $token"
-    'Content-Type' = 'application/vnd.microsoft.appconfig.kv+json'
-}
-$body = @{
-    value        = $envValue
-    content_type = 'application/json'
-} | ConvertTo-Json -Compress -Depth 3
+# ── Write key-value via az rest + temp file (avoids quoting & auth conflicts) ─
 
 if ($PSCmdlet.ShouldProcess($key, "Write to App Configuration ($ConfigEndpoint)")) {
     Write-Host "Writing key '$key' to $ConfigEndpoint …" -ForegroundColor Cyan
 
-    $response = Invoke-RestMethod `
-        -Method  PUT `
-        -Uri     $uri `
-        -Headers $headers `
-        -Body    $body `
-        -TimeoutSec 30
+    # Build App Config REST body.  Write to a temp file so that embedded JSON
+    # is never passed through PowerShell → process argument quoting (which
+    # strips double quotes on Windows and causes the auth conflict error).
+    $restBody = [ordered]@{
+        value        = $envValue
+        content_type = 'application/json'
+    } | ConvertTo-Json -Compress -Depth 2
+
+    $tempFile = [System.IO.Path]::GetTempFileName()
+    try {
+        [System.IO.File]::WriteAllText($tempFile, $restBody, [System.Text.Encoding]::UTF8)
+
+        $uri    = "$ConfigEndpoint/kv/$([Uri]::EscapeDataString($key))?api-version=2023-10-01"
+        $result = az rest `
+            --method   PUT `
+            --url      $uri `
+            --resource 'https://azconfig.io' `
+            --body     "@$tempFile" `
+            --output   json 2>&1
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to write to App Configuration.`n$result"
+        }
+        $response = $result | ConvertFrom-Json
+    } finally {
+        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+    }
 
     Write-Host "✓ Registered environment for '$UserUpn'" -ForegroundColor Green
     Write-Host ""
@@ -135,10 +137,4 @@ if ($PSCmdlet.ShouldProcess($key, "Write to App Configuration ($ConfigEndpoint)"
     Write-Host "  Subscription : $SubscriptionId"
     Write-Host "  Region       : $Region  ($GeoCode)"
     Write-Host "  Default SCUs : $DefaultScuCount  (max $MaxScuCount)"
-    Write-Host ""
-    Write-Host "Next step: grant the Logic App managed identity Contributor on the resource group:" -ForegroundColor Yellow
-    Write-Host "  az role assignment create \"
-    Write-Host "    --assignee <logicAppPrincipalId> \"
-    Write-Host "    --role Contributor \"
-    Write-Host "    --scope /subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup"
 }
