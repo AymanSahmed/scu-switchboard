@@ -42,8 +42,22 @@ There are two roles:
 
 ### Admin — Deploy Azure infrastructure
 
+**Option A — One-click via Azure Portal** (repo must be public):
+
+[![Deploy to Azure](https://aka.ms/deploytoazure)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAymanSahmed%2Fscu-switchboard%2Fmaster%2Finfra%2Fmain.json)
+[![Visualize](https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/visualizebutton.svg)](https://portal.azure.com/#view/Microsoft_Azure_CreateUIDef/CustomDeploymentBlade/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAymanSahmed%2Fscu-switchboard%2Fmaster%2Finfra%2Fmain.json)
+
+Portal parameters to fill in:
+
+| Parameter | Notes |
+|-----------|-------|
+| `prefix` | Short prefix for resource names (default `scu-sw`) |
+| `webhookSecret` | Generate a strong random string — keep a copy |
+| `adminPrincipalId` | Your Azure AD Object ID (`az ad signed-in-user show --query id -o tsv`) |
+
+**Option B — PowerShell script** (handles RBAC + secret management automatically):
+
 ```powershell
-# Clone the repo, then:
 .\Deploy-Azure.ps1
 ```
 
