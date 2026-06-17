@@ -1,0 +1,279 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "webhookSecret": {
+      "type": "SecureString",
+      "defaultValue": ""
+    },
+    "appConfigEndpoint": {
+      "type": "String",
+      "defaultValue": ""
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "String",
+      "defaultValue": ""
+    }
+  },
+  "triggers": {
+    "HTTP_Webhook": {
+      "type": "Request",
+      "kind": "Http",
+      "inputs": {
+        "schema": {
+          "type": "object",
+          "required": ["action", "user"],
+          "properties": {
+            "action": {
+              "type": "string",
+              "description": "One of: start, scale, stop, status"
+            },
+            "user": {
+              "type": "string",
+              "description": "Requesting user UPN, e.g. johndoe@contoso.com"
+            },
+            "scuCount": {
+              "type": "integer",
+              "description": "Desired SCU count — required for 'scale', optional for 'start'"
+            }
+          }
+        }
+      }
+    }
+  },
+  "actions": {
+    "Validate_Secret": {
+      "type": "If",
+      "expression": {
+        "and": [
+          {
+            "equals": [
+              "@{triggerOutputs()['headers']['x-webhook-secret']}",
+              "@{parameters('webhookSecret')}"
+            ]
+          }
+        ]
+      },
+      "actions": {
+        "Resolve_User_Alias": {
+          "type": "Compose",
+          "inputs": "@{toLower(first(split(triggerBody()?['user'], '@')))}"
+        },
+        "Get_User_Config": {
+          "type": "Http",
+          "runAfter": {
+            "Resolve_User_Alias": ["Succeeded"]
+          },
+          "inputs": {
+            "method": "GET",
+            "uri": "@{concat(parameters('appConfigEndpoint'), '/kv/scu%3Aenv%3A', outputs('Resolve_User_Alias'), '?api-version=2023-11-01')}",
+            "authentication": {
+              "type": "ManagedServiceIdentity",
+              "audience": "https://azconfig.io"
+            }
+          }
+        },
+        "Check_User_Found": {
+          "type": "If",
+          "runAfter": {
+            "Get_User_Config": ["Succeeded", "Failed"]
+          },
+          "expression": {
+            "and": [
+              {
+                "equals": [
+                  "@outputs('Get_User_Config')['statusCode']",
+                  200
+                ]
+              }
+            ]
+          },
+          "actions": {
+            "Parse_User_Config": {
+              "type": "Compose",
+              "inputs": "@json(body('Get_User_Config')['value'])"
+            },
+            "Switch_On_Action": {
+              "type": "Switch",
+              "runAfter": {
+                "Parse_User_Config": ["Succeeded"]
+              },
+              "expression": "@triggerBody()?['action']",
+              "cases": {
+                "start": {
+                  "case": "start",
+                  "actions": {
+                    "Start_Capacity": {
+                      "type": "Http",
+                      "inputs": {
+                        "method": "PUT",
+                        "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-11-01-preview')}",
+                        "body": {
+                          "location": "@outputs('Parse_User_Config')['region']",
+                          "properties": {
+                            "numberOfUnits": "@coalesce(triggerBody()?['scuCount'], outputs('Parse_User_Config')['defaultScuCount'])",
+                            "crossGeoCompute": "Allowed",
+                            "geo": "@outputs('Parse_User_Config')['geoCode']"
+                          }
+                        },
+                        "authentication": {
+                          "type": "ManagedServiceIdentity",
+                          "audience": "https://management.azure.com/"
+                        }
+                      }
+                    }
+                  }
+                },
+                "scale": {
+                  "case": "scale",
+                  "actions": {
+                    "Scale_Capacity": {
+                      "type": "Http",
+                      "inputs": {
+                        "method": "PUT",
+                        "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-11-01-preview')}",
+                        "body": {
+                          "location": "@outputs('Parse_User_Config')['region']",
+                          "properties": {
+                            "numberOfUnits": "@triggerBody()?['scuCount']",
+                            "crossGeoCompute": "Allowed",
+                            "geo": "@outputs('Parse_User_Config')['geoCode']"
+                          }
+                        },
+                        "authentication": {
+                          "type": "ManagedServiceIdentity",
+                          "audience": "https://management.azure.com/"
+                        }
+                      }
+                    }
+                  }
+                },
+                "stop": {
+                  "case": "stop",
+                  "actions": {
+                    "Stop_Capacity": {
+                      "type": "Http",
+                      "inputs": {
+                        "method": "DELETE",
+                        "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-11-01-preview')}",
+                        "authentication": {
+                          "type": "ManagedServiceIdentity",
+                          "audience": "https://management.azure.com/"
+                        }
+                      }
+                    }
+                  }
+                },
+                "status": {
+                  "case": "status",
+                  "actions": {
+                    "Get_Capacity_Status": {
+                      "type": "Http",
+                      "inputs": {
+                        "method": "GET",
+                        "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-11-01-preview')}",
+                        "authentication": {
+                          "type": "ManagedServiceIdentity",
+                          "audience": "https://management.azure.com/"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "default": {
+                "actions": {
+                  "Return_Invalid_Action": {
+                    "type": "Response",
+                    "inputs": {
+                      "statusCode": 400,
+                      "headers": { "Content-Type": "application/json" },
+                      "body": {
+                        "error": "invalid_action",
+                        "message": "Valid actions: start, scale, stop, status"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "Compose_Success_Response": {
+              "type": "Compose",
+              "runAfter": {
+                "Switch_On_Action": ["Succeeded"]
+              },
+              "inputs": {
+                "status": "success",
+                "action": "@triggerBody()?['action']",
+                "user": "@triggerBody()?['user']",
+                "capacityName": "@outputs('Parse_User_Config')['capacityName']",
+                "provisioningState": "@if(equals(triggerBody()?['action'], 'status'), body('Get_Capacity_Status')?['properties']?['provisioningState'], null)",
+                "correlationId": "@workflow()['run']['name']",
+                "timestamp": "@utcNow()"
+              }
+            },
+            "Return_Success": {
+              "type": "Response",
+              "runAfter": {
+                "Compose_Success_Response": ["Succeeded"]
+              },
+              "inputs": {
+                "statusCode": 200,
+                "headers": { "Content-Type": "application/json" },
+                "body": "@outputs('Compose_Success_Response')"
+              }
+            },
+            "Return_ARM_Error": {
+              "type": "Response",
+              "runAfter": {
+                "Switch_On_Action": ["Failed", "TimedOut"]
+              },
+              "inputs": {
+                "statusCode": 502,
+                "headers": { "Content-Type": "application/json" },
+                "body": {
+                  "error": "arm_error",
+                  "armErrorCode": "@{coalesce(body('Start_Capacity')?['error']?['code'], body('Stop_Capacity')?['error']?['code'], body('Scale_Capacity')?['error']?['code'], body('Get_Capacity_Status')?['error']?['code'], 'Unknown')}",
+                  "message": "@{coalesce(body('Start_Capacity')?['error']?['message'], body('Stop_Capacity')?['error']?['message'], body('Scale_Capacity')?['error']?['message'], body('Get_Capacity_Status')?['error']?['message'], 'ARM operation failed.')}",
+                  "correlationId": "@workflow()['run']['name']"
+                }
+              }
+            }
+          },
+          "else": {
+            "actions": {
+              "Return_User_Not_Found": {
+                "type": "Response",
+                "inputs": {
+                  "statusCode": 404,
+                  "headers": { "Content-Type": "application/json" },
+                  "body": {
+                    "error": "user_not_found",
+                    "message": "@{concat('No environment registered for: ', triggerBody()?['user'], '. Run Add-UserEnvironment.ps1 first.')}"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "actions": {
+          "Return_Unauthorized": {
+            "type": "Response",
+            "inputs": {
+              "statusCode": 401,
+              "headers": { "Content-Type": "application/json" },
+              "body": {
+                "error": "unauthorized",
+                "message": "Invalid or missing x-webhook-secret header."
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "outputs": {}
+}
+

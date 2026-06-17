@@ -1,0 +1,795 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.43.8.12551",
+      "templateHash": "1247534858448067971"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for all resources."
+      }
+    },
+    "prefix": {
+      "type": "string",
+      "defaultValue": "scu-sw",
+      "minLength": 3,
+      "maxLength": 16,
+      "metadata": {
+        "description": "Short prefix applied to every resource name (lowercase alphanumeric + hyphens)."
+      }
+    },
+    "webhookSecret": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Webhook shared secret.  Pass from Key Vault or CI variable — never commit."
+      }
+    },
+    "adminPrincipalId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "AAD object ID of the admin/operator principal; receives App Configuration Data Owner so they can run Add-UserEnvironment.ps1."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceGroup().id, format('{0}-la', parameters('prefix')), '516239f1-63e1-4d78-a4de-a74fb236a071')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '516239f1-63e1-4d78-a4de-a74fb236a071')]",
+        "principalId": "[reference(resourceId('Microsoft.Resources/deployments', 'logicapp'), '2025-04-01').outputs.principalId.value]",
+        "principalType": "ServicePrincipal",
+        "description": "Allows Logic App to read user environment entries from App Configuration"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'logicapp')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceGroup().id, format('{0}-la', parameters('prefix')), '4633458b-17de-408a-b874-0445c86b69e6')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')]",
+        "principalId": "[reference(resourceId('Microsoft.Resources/deployments', 'logicapp'), '2025-04-01').outputs.principalId.value]",
+        "principalType": "ServicePrincipal",
+        "description": "Allows Logic App to read the webhook secret from Key Vault (future use)"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'logicapp')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "loganalytics",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "workspaceName": {
+            "value": "[format('{0}-law', parameters('prefix'))]"
+          },
+          "appInsightsName": {
+            "value": "[format('{0}-ai', parameters('prefix'))]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.43.8.12551",
+              "templateHash": "17478598616535244757"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "workspaceName": {
+              "type": "string"
+            },
+            "appInsightsName": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[parameters('workspaceName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": 30,
+                "features": {
+                  "disableLocalAuth": false
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[parameters('appInsightsName')]",
+              "location": "[parameters('location')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+                "DisableIpMasking": false,
+                "DisableLocalAuth": false,
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "workspaceId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), '2023-09-01').customerId]"
+            },
+            "workspaceResourceId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
+            },
+            "appInsightsConnectionString": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "appconfig",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "configStoreName": {
+            "value": "[format('{0}-appconfig', parameters('prefix'))]"
+          },
+          "adminPrincipalId": {
+            "value": "[parameters('adminPrincipalId')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.43.8.12551",
+              "templateHash": "15135904050952210025"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "configStoreName": {
+              "type": "string"
+            },
+            "adminPrincipalId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "AAD object ID of an admin/operator who should get App Configuration Data Owner rights."
+              }
+            }
+          },
+          "variables": {
+            "appConfigDataOwnerRoleId": "5ae67dd6-50cb-40e7-96ff-dc2bfa4b606b"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.AppConfiguration/configurationStores",
+              "apiVersion": "2024-05-01",
+              "name": "[parameters('configStoreName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "standard"
+              },
+              "properties": {
+                "disableLocalAuth": false,
+                "enablePurgeProtection": false,
+                "softDeleteRetentionInDays": 1,
+                "publicNetworkAccess": "Enabled"
+              }
+            },
+            {
+              "condition": "[not(empty(parameters('adminPrincipalId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.AppConfiguration/configurationStores', parameters('configStoreName'))]",
+              "name": "[guid(resourceId('Microsoft.AppConfiguration/configurationStores', parameters('configStoreName')), parameters('adminPrincipalId'), variables('appConfigDataOwnerRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('appConfigDataOwnerRoleId'))]",
+                "principalId": "[parameters('adminPrincipalId')]",
+                "principalType": "User"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.AppConfiguration/configurationStores', parameters('configStoreName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "endpoint": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.AppConfiguration/configurationStores', parameters('configStoreName')), '2024-05-01').endpoint]"
+            },
+            "configStoreName": {
+              "type": "string",
+              "value": "[parameters('configStoreName')]"
+            },
+            "configStoreId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.AppConfiguration/configurationStores', parameters('configStoreName'))]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "keyvault",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "keyVaultName": {
+            "value": "[format('{0}-kv', parameters('prefix'))]"
+          },
+          "webhookSecret": {
+            "value": "[parameters('webhookSecret')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.43.8.12551",
+              "templateHash": "5032596251631193523"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "keyVaultName": {
+              "type": "string"
+            },
+            "webhookSecret": {
+              "type": "securestring"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.KeyVault/vaults",
+              "apiVersion": "2023-07-01",
+              "name": "[parameters('keyVaultName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "family": "A",
+                  "name": "standard"
+                },
+                "tenantId": "[subscription().tenantId]",
+                "enableRbacAuthorization": true,
+                "enableSoftDelete": true,
+                "softDeleteRetentionInDays": 7,
+                "enabledForDeployment": false,
+                "enabledForTemplateDeployment": false,
+                "enabledForDiskEncryption": false,
+                "publicNetworkAccess": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('keyVaultName'), 'webhook-secret')]",
+              "properties": {
+                "value": "[parameters('webhookSecret')]",
+                "contentType": "text/plain",
+                "attributes": {
+                  "enabled": true
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "keyVaultName": {
+              "type": "string",
+              "value": "[parameters('keyVaultName')]"
+            },
+            "keyVaultId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+            },
+            "webhookSecretUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'webhook-secret'), '2023-07-01').secretUri]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "logicapp",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "logicAppName": {
+            "value": "[format('{0}-la', parameters('prefix'))]"
+          },
+          "webhookSecret": {
+            "value": "[parameters('webhookSecret')]"
+          },
+          "appConfigEndpoint": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appconfig'), '2025-04-01').outputs.endpoint.value]"
+          },
+          "logAnalyticsWorkspaceId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'loganalytics'), '2025-04-01').outputs.workspaceId.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.43.8.12551",
+              "templateHash": "2710700847586081912"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "logicAppName": {
+              "type": "string"
+            },
+            "webhookSecret": {
+              "type": "securestring"
+            },
+            "appConfigEndpoint": {
+              "type": "string"
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "$fxv#0": {
+              "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+              "contentVersion": "1.0.0.0",
+              "parameters": {
+                "webhookSecret": {
+                  "type": "SecureString",
+                  "defaultValue": ""
+                },
+                "appConfigEndpoint": {
+                  "type": "String",
+                  "defaultValue": ""
+                },
+                "logAnalyticsWorkspaceId": {
+                  "type": "String",
+                  "defaultValue": ""
+                }
+              },
+              "triggers": {
+                "HTTP_Webhook": {
+                  "type": "Request",
+                  "kind": "Http",
+                  "inputs": {
+                    "schema": {
+                      "type": "object",
+                      "required": [
+                        "action",
+                        "user"
+                      ],
+                      "properties": {
+                        "action": {
+                          "type": "string",
+                          "description": "One of: start, scale, stop, status"
+                        },
+                        "user": {
+                          "type": "string",
+                          "description": "Requesting user UPN, e.g. johndoe@contoso.com"
+                        },
+                        "scuCount": {
+                          "type": "integer",
+                          "description": "Desired SCU count — required for 'scale', optional for 'start'"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "actions": {
+                "Validate_Secret": {
+                  "type": "If",
+                  "expression": {
+                    "and": [
+                      {
+                        "equals": [
+                          "@{triggerOutputs()['headers']['x-webhook-secret']}",
+                          "@{parameters('webhookSecret')}"
+                        ]
+                      }
+                    ]
+                  },
+                  "actions": {
+                    "Resolve_User_Alias": {
+                      "type": "Compose",
+                      "inputs": "@{toLower(first(split(triggerBody()?['user'], '@')))}"
+                    },
+                    "Get_User_Config": {
+                      "type": "Http",
+                      "runAfter": {
+                        "Resolve_User_Alias": [
+                          "Succeeded"
+                        ]
+                      },
+                      "inputs": {
+                        "method": "GET",
+                        "uri": "@{concat(parameters('appConfigEndpoint'), '/kv/scu%3Aenv%3A', outputs('Resolve_User_Alias'), '?api-version=2023-11-01')}",
+                        "authentication": {
+                          "type": "ManagedServiceIdentity",
+                          "audience": "https://azconfig.io"
+                        }
+                      }
+                    },
+                    "Check_User_Found": {
+                      "type": "If",
+                      "runAfter": {
+                        "Get_User_Config": [
+                          "Succeeded",
+                          "Failed"
+                        ]
+                      },
+                      "expression": {
+                        "and": [
+                          {
+                            "equals": [
+                              "@outputs('Get_User_Config')['statusCode']",
+                              200
+                            ]
+                          }
+                        ]
+                      },
+                      "actions": {
+                        "Parse_User_Config": {
+                          "type": "Compose",
+                          "inputs": "@json(body('Get_User_Config')['value'])"
+                        },
+                        "Switch_On_Action": {
+                          "type": "Switch",
+                          "runAfter": {
+                            "Parse_User_Config": [
+                              "Succeeded"
+                            ]
+                          },
+                          "expression": "@triggerBody()?['action']",
+                          "cases": {
+                            "start": {
+                              "case": "start",
+                              "actions": {
+                                "Start_Capacity": {
+                                  "type": "Http",
+                                  "inputs": {
+                                    "method": "PUT",
+                                    "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-03-01-preview')}",
+                                    "body": {
+                                      "location": "@outputs('Parse_User_Config')['region']",
+                                      "properties": {
+                                        "numberOfUnits": "@coalesce(triggerBody()?['scuCount'], outputs('Parse_User_Config')['defaultScuCount'])",
+                                        "crossGeoCompute": "Allowed",
+                                        "geo": "@outputs('Parse_User_Config')['geoCode']"
+                                      }
+                                    },
+                                    "authentication": {
+                                      "type": "ManagedServiceIdentity",
+                                      "audience": "https://management.azure.com/"
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            "scale": {
+                              "case": "scale",
+                              "actions": {
+                                "Scale_Capacity": {
+                                  "type": "Http",
+                                  "inputs": {
+                                    "method": "PUT",
+                                    "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-03-01-preview')}",
+                                    "body": {
+                                      "location": "@outputs('Parse_User_Config')['region']",
+                                      "properties": {
+                                        "numberOfUnits": "@triggerBody()?['scuCount']",
+                                        "crossGeoCompute": "Allowed",
+                                        "geo": "@outputs('Parse_User_Config')['geoCode']"
+                                      }
+                                    },
+                                    "authentication": {
+                                      "type": "ManagedServiceIdentity",
+                                      "audience": "https://management.azure.com/"
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            "stop": {
+                              "case": "stop",
+                              "actions": {
+                                "Stop_Capacity": {
+                                  "type": "Http",
+                                  "inputs": {
+                                    "method": "DELETE",
+                                    "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-03-01-preview')}",
+                                    "authentication": {
+                                      "type": "ManagedServiceIdentity",
+                                      "audience": "https://management.azure.com/"
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            "status": {
+                              "case": "status",
+                              "actions": {
+                                "Get_Capacity_Status": {
+                                  "type": "Http",
+                                  "inputs": {
+                                    "method": "GET",
+                                    "uri": "@{concat('https://management.azure.com/subscriptions/', outputs('Parse_User_Config')['subscriptionId'], '/resourceGroups/', outputs('Parse_User_Config')['resourceGroup'], '/providers/Microsoft.SecurityCopilot/capacities/', outputs('Parse_User_Config')['capacityName'], '?api-version=2024-03-01-preview')}",
+                                    "authentication": {
+                                      "type": "ManagedServiceIdentity",
+                                      "audience": "https://management.azure.com/"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "default": {
+                            "actions": {
+                              "Return_Invalid_Action": {
+                                "type": "Response",
+                                "inputs": {
+                                  "statusCode": 400,
+                                  "headers": {
+                                    "Content-Type": "application/json"
+                                  },
+                                  "body": {
+                                    "error": "invalid_action",
+                                    "message": "Valid actions: start, scale, stop, status"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "Compose_Success_Response": {
+                          "type": "Compose",
+                          "runAfter": {
+                            "Switch_On_Action": [
+                              "Succeeded"
+                            ]
+                          },
+                          "inputs": {
+                            "status": "success",
+                            "action": "@triggerBody()?['action']",
+                            "user": "@triggerBody()?['user']",
+                            "capacityName": "@outputs('Parse_User_Config')['capacityName']",
+                            "provisioningState": "@if(equals(triggerBody()?['action'], 'status'), body('Get_Capacity_Status')?['properties']?['provisioningState'], null)",
+                            "correlationId": "@workflow()['run']['name']",
+                            "timestamp": "@utcNow()"
+                          }
+                        },
+                        "Return_Success": {
+                          "type": "Response",
+                          "runAfter": {
+                            "Compose_Success_Response": [
+                              "Succeeded"
+                            ]
+                          },
+                          "inputs": {
+                            "statusCode": 200,
+                            "headers": {
+                              "Content-Type": "application/json"
+                            },
+                            "body": "@outputs('Compose_Success_Response')"
+                          }
+                        },
+                        "Return_ARM_Error": {
+                          "type": "Response",
+                          "runAfter": {
+                            "Switch_On_Action": [
+                              "Failed",
+                              "TimedOut"
+                            ]
+                          },
+                          "inputs": {
+                            "statusCode": 502,
+                            "headers": {
+                              "Content-Type": "application/json"
+                            },
+                            "body": {
+                              "error": "arm_error",
+                              "message": "ARM operation failed. Check Logic App run history for details.",
+                              "correlationId": "@workflow()['run']['name']"
+                            }
+                          }
+                        }
+                      },
+                      "else": {
+                        "actions": {
+                          "Return_User_Not_Found": {
+                            "type": "Response",
+                            "inputs": {
+                              "statusCode": 404,
+                              "headers": {
+                                "Content-Type": "application/json"
+                              },
+                              "body": {
+                                "error": "user_not_found",
+                                "message": "@{concat('No environment registered for: ', triggerBody()?['user'], '. Run Add-UserEnvironment.ps1 first.')}"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "else": {
+                    "actions": {
+                      "Return_Unauthorized": {
+                        "type": "Response",
+                        "inputs": {
+                          "statusCode": 401,
+                          "headers": {
+                            "Content-Type": "application/json"
+                          },
+                          "body": {
+                            "error": "unauthorized",
+                            "message": "Invalid or missing x-webhook-secret header."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "outputs": {}
+            },
+            "workflowDefinition": "[variables('$fxv#0')]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Logic/workflows",
+              "apiVersion": "2019-05-01",
+              "name": "[parameters('logicAppName')]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "state": "Enabled",
+                "definition": "[variables('workflowDefinition')]",
+                "parameters": {
+                  "webhookSecret": {
+                    "value": "[parameters('webhookSecret')]"
+                  },
+                  "appConfigEndpoint": {
+                    "value": "[parameters('appConfigEndpoint')]"
+                  },
+                  "logAnalyticsWorkspaceId": {
+                    "value": "[parameters('logAnalyticsWorkspaceId')]"
+                  }
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "principalId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Logic/workflows', parameters('logicAppName')), '2019-05-01', 'full').identity.principalId]"
+            },
+            "logicAppId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))]"
+            },
+            "logicAppName": {
+              "type": "string",
+              "value": "[parameters('logicAppName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'appconfig')]",
+        "[resourceId('Microsoft.Resources/deployments', 'keyvault')]",
+        "[resourceId('Microsoft.Resources/deployments', 'loganalytics')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "logicAppPrincipalId": {
+      "type": "string",
+      "metadata": {
+        "description": "Logic App system-assigned managed identity principal ID.  Grant this Contributor on each user capacity resource group."
+      },
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'logicapp'), '2025-04-01').outputs.principalId.value]"
+    },
+    "appConfigEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "App Configuration endpoint.  Pass to Add-UserEnvironment.ps1 -ConfigEndpoint."
+      },
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appconfig'), '2025-04-01').outputs.endpoint.value]"
+    },
+    "logicAppName": {
+      "type": "string",
+      "metadata": {
+        "description": "Logic App resource name.  Use with az logic workflow trigger list-callback-url to get the webhook URL."
+      },
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'logicapp'), '2025-04-01').outputs.logicAppName.value]"
+    },
+    "appInsightsConnectionString": {
+      "type": "string",
+      "metadata": {
+        "description": "Application Insights connection string (optional — for client-side telemetry)."
+      },
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'loganalytics'), '2025-04-01').outputs.appInsightsConnectionString.value]"
+    }
+  }
+}

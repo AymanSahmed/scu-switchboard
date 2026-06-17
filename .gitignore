@@ -1,0 +1,17 @@
+# Gadget config — contains the webhook secret
+client/config.json
+
+# Bicep build output
+infra/**/*.json.compiled
+.bicep/
+
+# PowerShell temp
+*.ps1.tmp
+
+# Editor
+.vscode/settings.json
+*.code-workspace
+
+# OS
+Thumbs.db
+.DS_Store

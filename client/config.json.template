@@ -1,0 +1,9 @@
+{
+  "_comment": "Copy this file to config.json (same folder) and fill in the values. NEVER commit config.json.",
+
+  "webhookUrl": "https://prod-XX.eastus.logic.azure.com:443/workflows/WORKFLOW_ID/triggers/HTTP_Webhook/paths/invoke?api-version=2016-10-01&sp=%2Ftriggers%2FHTTP_Webhook%2Frun&sv=1.0&sig=SIGNATURE",
+
+  "webhookSecret": "REPLACE_WITH_THE_SECRET_YOU_DEPLOYED",
+
+  "userUpn": "you@contoso.com"
+}
