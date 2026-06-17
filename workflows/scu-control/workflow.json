@@ -229,14 +229,9 @@
                 "Switch_On_Action": ["Failed", "TimedOut"]
               },
               "inputs": {
-                "statusCode": 502,
+                "statusCode": "@if(and(equals(triggerBody()?['action'], 'status'), contains(coalesce(body('Get_Capacity_Status')?['error']?['code'], ''), 'NotFound')), 200, 502)",
                 "headers": { "Content-Type": "application/json" },
-                "body": {
-                  "error": "arm_error",
-                  "armErrorCode": "@{coalesce(body('Start_Capacity')?['error']?['code'], body('Stop_Capacity')?['error']?['code'], body('Scale_Capacity')?['error']?['code'], body('Get_Capacity_Status')?['error']?['code'], 'Unknown')}",
-                  "message": "@{coalesce(body('Start_Capacity')?['error']?['message'], body('Stop_Capacity')?['error']?['message'], body('Scale_Capacity')?['error']?['message'], body('Get_Capacity_Status')?['error']?['message'], 'ARM operation failed.')}",
-                  "correlationId": "@workflow()['run']['name']"
-                }
+                "body": "@if(and(equals(triggerBody()?['action'], 'status'), contains(coalesce(body('Get_Capacity_Status')?['error']?['code'], ''), 'NotFound')), createObject('status', 'success', 'action', 'status', 'provisioningState', 'Stopped', 'capacityName', outputs('Parse_User_Config')['capacityName'], 'correlationId', workflow()['run']['name']), createObject('error', 'arm_error', 'armErrorCode', coalesce(body('Start_Capacity')?['error']?['code'], body('Stop_Capacity')?['error']?['code'], body('Scale_Capacity')?['error']?['code'], body('Get_Capacity_Status')?['error']?['code'], 'Unknown'), 'message', coalesce(body('Start_Capacity')?['error']?['message'], body('Stop_Capacity')?['error']?['message'], body('Scale_Capacity')?['error']?['message'], body('Get_Capacity_Status')?['error']?['message'], 'ARM operation failed.'), 'correlationId', workflow()['run']['name']))"
               }
             }
           },

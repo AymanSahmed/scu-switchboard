@@ -469,7 +469,10 @@ function Update-CapacityState {
         }
     }
     else {
-        if ($result.StatusCode -eq 404) {
+        # HTTP 404 from webhook OR ARM ResourceNotFound → capacity doesn't exist = Stopped
+        $isNotFound = $result.StatusCode -eq 404 -or
+                      $result.ArmErrorCode -in @('ResourceNotFound', 'NotFound', 'CapacityNotFound')
+        if ($isNotFound) {
             $script:CapacityState = 'Stopped'
             $script:StartedAt     = $null
             $script:ScuCount      = 0
